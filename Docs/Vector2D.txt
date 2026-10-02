@@ -1,0 +1,265 @@
+
+Utilizei o antigravity com o modelo Claude Sonnet 4.6 para gerar o código, fiz o prompt utilizando técnicas de meta prompting para gerar o seguinte prompt.
+
+
+
+<persona>
+You are a Lead C++ Game Engine Programmer specializing in math libraries, robust engine architecture, and low-level optimization.
+</persona>
+
+<context>
+We are continuing the development of our custom 2D game engine's math foundation. 
+With `Transform2D` successfully implemented and tested, our next planned task is to implement the `Vector2D.cpp` file based on the provided `Vector2D.hpp` header.
+
+In a game engine, unhandled division by zero in vector math leads to fatal `NaN` propagation through the physics and rendering pipelines. Therefore, strict adherence to the documented preconditions (`@pre`) in the header is mandatory for this implementation.
+</context>
+
+<constraints>
+- WE WORK ON ONE FILE AT A TIME. Generate ONLY the code for `Vector2D.cpp`.
+- C++ STANDARD: Strictly adhere to C++11 standards.
+- ERROR HANDLING: Use standard `<cassert>` to enforce all `@pre` conditions documented in the header. 
+  - For `normalized()` and `normalize()`, assert that the squared length is greater than `EPSILON * EPSILON` (avoiding unnecessary `sqrt` calls for the check).
+  - For `operator/` and `operator/=`, assert that `std::abs(scalar) > EPSILON`.
+- PERFORMANCE FIRST: 
+  - For division operations (inside `normalized()`, `normalize()`, `operator/`, and `operator/=`), calculate the reciprocal (e.g., `1.0f / value`) and multiply. Floating-point multiplication is significantly faster than division.
+- INCLUDES: Explicitly `#include "Vector2D.hpp"`, `#include <cmath>`, and `#include <cassert>`.
+</constraints>
+
+<objective>
+Write the complete, highly optimized `Vector2D.cpp` implementation. Follow this step-by-step roadmap:
+
+Step 1: Setup the file with correct includes (`Vector2D.hpp`, `<cmath>`, `<cassert>`).
+Step 2: Implement `normalized()`. Check the length precondition with an assertion. Multiply `x` and `y` by the reciprocal of the length.
+Step 3: Implement `normalize()`. Assert the precondition and scale the vector in place using the reciprocal.
+Step 4: Implement `equals()`, comparing components against the provided tolerance.
+Step 5: Implement all `noexcept` arithmetic operators (`+`, `-`, `*`).
+Step 6: Implement division operators (`/`, `/=`). Assert the scalar precondition and use reciprocal multiplication.
+Step 7: Implement the global left-scalar multiplication `operator*`.
+
+Output only the C++ code for `Vector2D.cpp`.
+</objective>
+
+#ifndef GAME_VECTOR2D_HPP
+#define GAME_VECTOR2D_HPP
+
+
+#include <cmath>
+#include "Global.hpp"
+
+
+/**
+ * @file Vector2D.hpp
+ * @brief A 2D vector, used both as a point or position and as a direction.
+ *
+ * @invariant Components are expected to be finite floating-point numbers.
+ */
+struct Vector2D {
+    float x{0.0f};
+    float y{0.0f};
+
+
+    constexpr Vector2D() noexcept = default;
+    constexpr Vector2D(float in_x, float in_y) noexcept : x(in_x), y(in_y) {}
+
+
+    // --- Length ------------------------------------------------------------
+
+
+    /// Squared length. For fast distance comparison.
+    [[nodiscard]] constexpr float length_squared() const noexcept {
+        return x * x + y * y;
+    }
+
+
+    /// Euclidean length.
+    [[nodiscard]] float length() const noexcept {
+        return std::sqrt(length_squared());
+    }
+
+
+    /**
+     * @brief Returns a unit-length copy with the same direction.
+     * @pre length() > EPSILON (the zero vector has no defined direction).
+     * @post std::abs(result.length() - 1) < EPSILON.
+     */
+    [[nodiscard]] Vector2D normalized() const;
+
+
+    /**
+     * @brief Scales this vector in place to unit length.
+     * @pre length() > EPSILON.
+     */
+    void normalize();
+
+
+    /// Dot product.
+    [[nodiscard]] constexpr float dot(const Vector2D& rhs) const noexcept {
+        return x * rhs.x + y * rhs.y;
+    }
+
+
+    /// 2D scalar cross product.
+    [[nodiscard]] constexpr float cross(const Vector2D& rhs) const noexcept {
+        return x * rhs.y - y * rhs.x;
+    }
+
+
+    /// Approximate equality within a tolerance.
+    [[nodiscard]] bool equals(const Vector2D& rhs, float tolerance = EPSILON) const noexcept;
+
+
+
+
+    // --- Operators ---------------------------------------------------------
+
+
+    [[nodiscard]] Vector2D operator+(const Vector2D& rhs) const noexcept;
+    [[nodiscard]] Vector2D operator-(const Vector2D& rhs) const noexcept;
+    [[nodiscard]] Vector2D operator*(float scalar) const noexcept;
+
+
+    // @pre std::abs(scalar) > EPSILON.
+    [[nodiscard]] Vector2D operator/(float scalar) const;  
+
+
+    Vector2D& operator+=(const Vector2D& rhs) noexcept;
+    Vector2D& operator-=(const Vector2D& rhs) noexcept;
+    Vector2D& operator*=(float scalar) noexcept;
+
+
+    // @pre std::abs(scalar) > EPSILON.
+    Vector2D& operator/=(float scalar);
+};
+
+
+/// Left-scalar multiplication (scalar * vector).
+[[nodiscard]] Vector2D operator*(float scalar, const Vector2D& vec) noexcept;
+
+
+#endif // GAME_VECTOR2D_HPP
+
+
+
+Resposta : 
+
+Created Vector2D.cpp
+
+Now let me verify the existing Transform2D tests still compile and pass with the new implementation:
+
+Ran command: `$env:PATH = "C:\msys64\ucrt64\bin;" + env:PATH;g++-std=c++11-Wall-Wextra-otestTransform2D.exetestTransform2D.cppTransform2D.cppVector2D.cpp2>&1;if(LASTEXITCODE -eq 0) { .\test_Transform2D.exe }`
+
+Clean compile, zero warnings, all tests green. Here's the breakdown of every design decision:
+
+---
+
+## Implementation Notes
+
+### Precondition checks — why `length_squared() > EPSILON * EPSILON`
+
+Calling `length()` (which calls `std::sqrt`) just to check if a vector is zero would waste a square root. Squaring both sides of `length() > EPSILON` gives an equivalent, **sqrt-free** guard:
+
+```cpp
+// Equivalent, but no sqrt:
+assert(length_squared() > EPSILON * EPSILON);
+```
+
+### Reciprocal optimization
+
+Wherever a scalar divisor is validated, the reciprocal is computed **once** and then used with multiplications — replacing two expensive `div` instructions with two cheap `mul` instructions:
+
+```cpp
+const float inv = 1.0f / scalar;  // one division
+x *= inv;                          // two multiplications (cheaper)
+y *= inv;
+```
+
+This applies to `normalized()`, `normalize()`, `operator/`, and `operator/=`.
+
+### Assert discipline
+
+| Method | Condition asserted |
+|---|---|
+| `normalized()` | `length_squared() > EPSILON * EPSILON` |
+| `normalize()` | `length_squared() > EPSILON * EPSILON` |
+| `operator/` | `std::fabs(scalar) > EPSILON` |
+| `operator/=` | `std::fabs(scalar) > EPSILON` |
+
+All asserts include a **string message** for instant diagnosis. In release builds (`-DNDEBUG`), `assert` expands to nothing — **zero runtime cost in production**.
+
+Próximo prompt relacionado a testes 
+
+<persona>
+You are a Lead C++ Game Engine Programmer specializing in math libraries and unit testing.
+</persona>
+
+<context>
+The `Vector2D.cpp` implementation is excellent. The reciprocal optimizations and assert disciplines are perfect for a game engine. Now we need to verify its mathematical correctness.
+Following the project requirements, we are using standard C++ `<cassert>` for unit testing, compiling with C++11.
+</context>
+
+<constraints>
+- WE WORK ON ONE FILE AT A TIME. Generate ONLY the code for `test_Vector2D.cpp` containing the `main()` function.
+- ONLY use standard `<cassert>` for tests. Do not use external frameworks like GTest or Catch2.
+- NO DEATH TESTS: Because standard `assert` aborts the program upon failure, you MUST NOT write test cases that intentionally trigger the `@pre` preconditions (e.g., do not test division by zero or normalizing a zero vector). Test only valid paths so the test runner can finish execution.
+- FLOATING POINT COMPARISON: You MUST implement a helper function (e.g., `bool is_near(float a, float b, float epsilon = 1e-4f)`) to compare individual float values safely.
+- Test rigorously using known mathematical constants (e.g., testing `length()` using a 3-4-5 right triangle vector).
+- Include standard output (`<iostream>`) to print a "All Vector2D tests passed!" message at the very end of `main()`.
+</constraints>
+
+<objective>
+Write a robust `test_Vector2D.cpp` file. Keep the code clean, well-commented, and logically sectioned. Follow this exact roadmap:
+
+Step 1: Setup the file with correct includes (`iostream`, `cassert`, `"Vector2D.hpp"`, `cmath`) and the `is_near` helper.
+Step 2: Test Initialization (default and parameterized constructor).
+Step 3: Test Length and Length Squared (e.g., Vector2D(3.0f, 4.0f) should have length 5.0f).
+Step 4: Test Normalization (`normalized()` and `normalize()`). Verify the resulting length is `1.0f`.
+Step 5: Test Dot and Cross products. Use perpendicular vectors (dot = 0) and known vectors to verify correct cross product scalar values.
+Step 6: Test Arithmetic Operators (`+`, `-`, `*`, `/`) and assignment equivalents (`+=`, `-=`, `*=`, `/=`).
+Step 7: Test the global left-scalar multiplication `operator*`.
+Step 8: Output the success message.
+
+Output only the C++ code for `test_Vector2D.cpp`.
+</objective>
+
+Resposta 
+
+Created test_Vector2D.cpp
+Ran command: `$env:PATH = "C:\msys64\ucrt64\bin;" + env:PATH;g++-std=c++11-Wall-Wextra-otestVector2D.exetestVector2D.cppVector2D.cpp2>&1;if(LASTEXITCODE -eq 0) { .\test_Vector2D.exe }`
+
+All 6 sections pass cleanly with zero warnings. Here's the reasoning behind key test design decisions:
+
+---
+
+## Test Design Notes
+
+### 3-4-5 Triangle for `length()`
+Integer Pythagorean triples give **exact** floating-point results (`sqrt(25.0f) = 5.0f`), eliminating accumulated rounding error as a variable. The 5-12-13 triple is used a second time in `normalize()` for the same reason.
+
+### `length_squared()` as the normalization precondition proxy
+The tests call `normalized()` and `normalize()` only on vectors whose `length_squared()` is well above `EPSILON * EPSILON`, respecting the implementation's assert exactly. No zero vectors are normalized — that would abort the process and block subsequent tests.
+
+### Cross-product sign convention
+The sign of `cross(a, b)` encodes rotation direction:
+
+| Call | Result | Meaning |
+|---|---|---|
+| `unit_x.cross(unit_y)` | `+1` | `y` is CCW from `x` ✓ |
+| `unit_y.cross(unit_x)` | `-1` | `x` is CW from `y` ✓ |
+| `v.cross(v)` | `0` | Parallel — no rotation ✓ |
+
+### Round-trip identity for `*=` / `/=`
+```cpp
+r *= 4.0f;
+r /= 4.0f;
+// must equal original a
+```
+This catches any off-by-one in the reciprocal path — if `1.0f / 4.0f` accumulated error, the final values would drift from `a`.
+
+### Left vs. right scalar multiply commutativity
+```cpp
+assert(k * v == v * k);   // global vs member operator
+```
+Ensures the global `operator*` is not accidentally routing through a different code path than the member one.
+
+
+A partir disso, vejo que o código passou por todos os testes.

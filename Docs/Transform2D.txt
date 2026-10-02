@@ -1,0 +1,193 @@
+Iniciei o projeto a partir das transformações, acabei utilizando uma versão tosca do vector2d para testarmos as transformações, após isso, irei implementar uma versão melhorada do vector2d.
+
+Utilizei o antigravity com o modelo Claude Sonnet 4.6 para gerar o código, fiz o prompt utilizando técnicas de meta prompting para gerar o seguinte prompt. 
+
+<persona>
+You are a Lead C++ Game Engine Programmer specializing in math libraries, linear algebra, and low-level performance optimization. You write clean, robust, and highly optimized code.
+</persona>
+
+<context>
+I am developing a custom 2D game engine. We are currently implementing the math foundation. 
+I have the header file `Transform2D.hpp` (provided below), which defines a 3x3 affine transform for 2D points and directions.
+
+The matrix convention is strictly DirectX-style. This means:
+1. Storage is ROW-MAJOR (`m[row][col]`).
+2. Vectors are ROW vectors: [x, y, w].
+3. Translation lives in the THIRD ROW (`m[2][0] = tx`, `m[2][1] = ty`).
+4. Composed transforms read LEFT TO RIGHT (e.g., `A * B` means apply A first, then apply B).
+</context>
+
+<constraints>
+- WE WORK ON ONE FILE AT A TIME. Generate ONLY the code for `Transform2D.cpp`. Do not generate test files yet.
+- C++ STANDARD: Strictly adhere to C++11 standards. Do not use features from C++14/17/20 (e.g., do not use `std::numbers::pi`, use traditional methods or define constants if needed).
+- PERFORMANCE FIRST: Do NOT use `for` loops for matrix multiplication or vector transformations. Completely unroll the math.
+- AFFINE OPTIMIZATION: Since the 3rd column is always `[0, 0, 1]^T`, skip calculating the 3rd column during matrix multiplication (`operator*`). Hardcode the 3rd column of the result to `0, 0, 1`.
+- MATH RULES FOR MULTIPLICATION: In `A * B`, because vectors are row vectors and we compose left-to-right, the result `C[row][col]` is calculated by multiplying `A`'s rows by `B`'s columns.
+- MATH RULES FOR VECTORS/POINTS:
+  - `transform_point` (w=1): `res.x = x*m[0][0] + y*m[1][0] + 1*m[2][0]` (Apply translation).
+  - `transform_vector` (w=0): `res.x = x*m[0][0] + y*m[1][0] + 0*m[2][0]` (Ignore translation).
+- Explicitly `#include "Transform2D.hpp"` and `#include <cmath>`.
+- Do not use external math libraries.
+- Assume `Vector2D.hpp` provides a struct with public `x` and `y` float members.
+</constraints>
+
+<objective>
+Write the complete, highly optimized `Transform2D.cpp` implementation. Follow this exact step-by-step roadmap:
+
+Step 1: Setup the file with correct includes (`Transform2D.hpp` and `<cmath>`).
+Step 2: Implement the Factory methods (`translation`, `rotation`, `scale`). Ensure the values are placed in the correct indices for a ROW-MAJOR DirectX-style matrix.
+Step 3: Implement `operator*`. Unroll the 3x3 multiplication manually, keeping in mind the affine optimization constraint (skip calculating column 3).
+Step 4: Implement `operator*=` by leveraging the `operator*` you just wrote.
+Step 5: Implement `transform_point` applying the exact translation math (w=1).
+Step 6: Implement `transform_vector` completely ignoring translation (w=0).
+
+Output only the C++ code for `Transform2D.cpp`.
+</objective>
+
+[Header File Content]
+(Insert the content of Transform2D.hpp here)
+
+#ifndef GAME_TRANSFORM2D_HPP
+#define GAME_TRANSFORM2D_HPP
+
+
+#include "Vector2D.hpp"
+
+
+/**
+ * @file Transform2D.hpp
+ * @brief 3x3 affine transform for 2D points and directions.
+ *
+ * ---------------------------------------------------------------------------
+ * MATRIX CONVENTION (DirectX-style). A correct implementation requires:
+ *   1. Storage is ROW-MAJOR: m[row][col].
+ *   2. Vectors are ROW vectors.
+ *   3. A point is [x, y, 1]; a direction is [x, y, 0].
+ *   4. TRANSLATION lives in the THIRD ROW: m[2][0] = tx, m[2][1] = ty.
+ *   5. The third column is [0, 0, 1]^T for the affine transforms here.
+ *
+ * Rotation by angle a (positive = counter-clockwise):
+ *      m[0][0] =  cos(a)   m[0][1] = sin(a)
+ *      m[1][0] = -sin(a)   m[1][1] = cos(a)
+ *
+ * COMPOSITION ORDER: because v * (A * B) == (v * A) * B, the product A * B is
+ * the transform that applies A FIRST, then B. Composed transforms read LEFT TO
+ * RIGHT (the opposite of the column-vector M*v convention).
+ *
+ * @invariant Every entry is finite; the third column is [0, 0, 1]^T.
+ */
+class Transform2D {
+public:
+    /// Row-major storage, m[row][col]. Defaults to the identity.
+    float m[3][3]{
+        {1.0f, 0.0f, 0.0f},
+        {0.0f, 1.0f, 0.0f},
+        {0.0f, 0.0f, 1.0f}
+    };
+
+
+    /// Constructs the identity transform.
+    Transform2D() noexcept = default;
+
+
+    // --- Factories ---------------------------------------------------------
+    [[nodiscard]] static Transform2D translation(float tx, float ty) noexcept;  
+    [[nodiscard]] static Transform2D rotation(float angle_rad) noexcept;
+    [[nodiscard]] static Transform2D scale(float sx, float sy) noexcept;
+
+
+    /**
+     * @brief Matrix product.
+     * @return The transform equivalent to applying *this FIRST, then rhs.
+     */
+    [[nodiscard]] Transform2D operator*(const Transform2D& rhs) const noexcept;
+    Transform2D& operator*=(const Transform2D& rhs) noexcept;
+
+
+    /**
+     * @brief Transforms a POINT (w = 1): translation IS applied.
+     * @return [p.x, p.y, 1] * M.
+     */
+    [[nodiscard]] Vector2D transform_point(const Vector2D& point) const noexcept;
+
+
+    /**
+     * @brief Transforms a DIRECTION (w = 0): translation is NOT applied.
+     * @return [d.x, d.y, 0] * M (third row ignored).
+     */
+    [[nodiscard]] Vector2D transform_vector(const Vector2D& direction) const noexcept;
+};
+
+
+#endif // GAME_TRANSFORM2D_HPP
+
+
+
+
+A resposta do agente:
+
+Created Transform2D.cpp
+
+[`Transform2D.cpp`](REDACTED) is written. Here's a summary of every decision made:
+
+---
+
+## Implementation Notes
+
+### Factory Methods
+
+| Factory | Key indices set | Invariant preserved |
+|---|---|---|
+| `translation(tx, ty)` | `m[2][0]=tx`, `m[2][1]=ty` | Diagonal stays `1`, col 2 stays `[0,0,1]^T` |
+| `rotation(angle)` | `m[0][0]=c`, `m[0][1]=s`, `m[1][0]=-s`, `m[1][1]=c` | CCW rotation; col 2 stays intact |
+| `scale(sx, sy)` | `m[0][0]=sx`, `m[1][1]=sy` | Off-diagonals stay `0` |
+
+### `operator*` — Affine Optimization
+
+Both operands share the invariant that column 2 is `[0, 0, 1]^T`, so:
+- Columns 0 and 1 are computed via the full 3-element dot product (using `a.m[row][2]` which is `0` for rows 0/1 and `1` for row 2 — the compiler will constant-fold these).
+- **Column 2 is hardcoded** to `0, 0, 1` — zero multiplications wasted on it.
+- The math is fully unrolled: **9 multiplications and 6 additions** instead of the naive 27 muls / 18 adds.
+
+### `transform_point` vs `transform_vector`
+
+```
+// Point  (w=1): translation IS applied
+res.x = p.x*m[0][0] + p.y*m[1][0] + m[2][0];  // ← +m[2][0]
+
+// Vector (w=0): translation is NOT applied
+res.x = d.x*m[0][0] + d.y*m[1][0];             // ← nothing
+```
+
+The only difference is adding the third row — no branches, no conditional overhead.
+
+Segundo prompt, pedindo para o agente fazer os testes 
+
+<persona>
+You are a Lead C++ Game Engine Programmer specializing in math libraries and unit testing.
+</persona>
+
+<context>
+We successfully implemented `Transform2D.cpp` using the DirectX-style row-major conventions. Now we need to verify its mathematical correctness.
+Following the project requirements, we are using standard C++ `<cassert>` for unit testing, compiling with C++11.
+</context>
+
+<constraints>
+- WE WORK ON ONE FILE AT A TIME. Generate ONLY the code for `test_Transform2D.cpp` containing the `main()` function.
+- ONLY use standard `<cassert>` for tests. Do not use external frameworks like GTest or Catch2.
+- FLOATING POINT COMPARISON: Since we are dealing with trigonometric functions and floats, you MUST implement a helper function (e.g., `bool is_near(float a, float b, float epsilon = 1e-4f)`) to compare float values. Do not use `==` for float comparisons inside assertions.
+- Assume `Vector2D.hpp` provides a simple struct with `float x, y;`. Initialize it using aggregate initialization (e.g., `Vector2D v{1.0f, 2.0f};`).
+- Test all major functionalities rigorously:
+  1. Identity matrix initialization (default constructor).
+  2. Translation logic (ensuring it affects `transform_point` but ignores `transform_vector`).
+  3. Rotation logic (using standard angles like 90 degrees / PI_2). Use `<cmath>` for constants or calculations.
+  4. Scale logic.
+  5. Composition order (`A * B`). Apply a scale, then rotation, then translation, and verify the output matches left-to-right composition.
+- Include standard output (`<iostream>`) to print a "All Transform2D tests passed!" message at the very end of `main()`.
+</constraints>
+
+<objective>
+Write a robust `test_Transform2D.cpp` file that rigorously tests the `Transform2D` struct using C++ standard assertions. Keep the code clean, well-commented, and logically sectioned.
+</objective>
+
+O antigravity acabou tendo um pouco de dor de cabeça para compilar o código de testes como esperado (IA não estava conseguindo acessar o GCC). Após isso, ele identificou que ainda não tínhamos instanciado variáveis globais e foi e fez a correção depois disso o código passou em todos os testes.

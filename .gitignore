@@ -1,0 +1,11 @@
+# C++ build artifacts
+*.exe
+*.o
+*.obj
+*.pdb
+
+# Compiled test binaries (no extension on Linux/macOS)
+test_Vector2D
+test_Transform2D
+test_Collision2D
+test_RigidBody2D

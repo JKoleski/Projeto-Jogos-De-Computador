@@ -1,0 +1,164 @@
+
+Utilizei o antigravity com o modelo Claude Sonnet 4.6 para gerar o código, fiz o prompt utilizando técnicas de meta prompting para gerar o seguinte prompt.
+
+<persona>
+You are a Lead C++ Game Engine Programmer specializing in physics simulation, numerical integration, and low-level engine architecture.
+</persona>
+
+<context>
+The collision detection module is fully implemented and tested. Our next task is to implement the point-mass motion state in `RigidBody2D.cpp` based on the `RigidBody2D.hpp` header.
+
+The physics system relies on SEMI-IMPLICIT (symplectic) EULER integration to remain stable for interactive simulation. The exact mathematical order of operations is critical.
+</context>
+
+<constraints>
+- WE WORK ON ONE FILE AT A TIME. Generate ONLY the code for `RigidBody2D.cpp`. Do not generate tests or modify other files.
+- C++ STANDARD: Strictly adhere to C++11 standards.
+- ERROR HANDLING: Enforce the `@pre dt > 0` condition documented in the header by using standard `<cassert>`.
+- NUMERICAL INTEGRATION: You MUST use the Semi-Implicit Euler method exactly as documented. 
+  1. Update `velocity` first.
+  2. Update `position` using the newly updated `velocity`.
+- VECTOR MATH: Leverage the `operator+=` and `operator*` that we already thoroughly tested in `Vector2D`.
+- INCLUDES: Explicitly `#include "RigidBody2D.hpp"` and `#include <cassert>`.
+</constraints>
+
+<objective>
+Write the complete, highly optimized `RigidBody2D.cpp` implementation. Follow this step-by-step roadmap:
+
+Step 1: Setup the file with correct includes (`"RigidBody2D.hpp"`, `<cassert>`).
+Step 2: Implement the `integrate(float dt)` method.
+Step 3: Inside the method, add an assertion to verify that `dt > 0.0f` with a descriptive string message.
+Step 4: Update the `velocity` vector by adding `acceleration * dt`.
+Step 5: Update the `position` vector by adding the *new* `velocity * dt`.
+
+Output only the C++ code for `RigidBody2D.cpp`.
+</objective>
+
+[RigidBody2D.hpp Content]
+#ifndef GAME_RIGIDBODY2D_HPP
+#define GAME_RIGIDBODY2D_HPP
+
+#include "Vector2D.hpp"
+
+/**
+ * @file RigidBody2D.hpp
+ * @brief Point-mass motion state and its time integration.
+ *
+ * Holds position, velocity and acceleration in continuous world space and
+ * advances them with SEMI-IMPLICIT (symplectic) EULER, which is stable for
+ * interactive simulation:
+ *
+ *      velocity += acceleration * dt;
+ *      position += velocity     * dt;   // uses the just-updated velocity
+ *
+ * The simulation uses a fixed timestep, so integrate() is called with the same
+ * dt throughout a run, keeping motion reproducible.
+ */
+struct RigidBody2D {
+    Vector2D position;      ///< World position, in pixels.
+    Vector2D velocity;      ///< Pixels per second.
+    Vector2D acceleration;  ///< Pixels per second squared.
+
+    /**
+     * @brief Advances the body by one fixed step (semi-implicit Euler).
+     * @param dt Timestep in seconds.
+     * @pre dt > 0.
+     */
+    void integrate(float dt) noexcept;
+};
+
+#endif // GAME_RIGIDBODY2D_HPP
+
+Resposta 
+
+Created RigidBody2D.cpp
+Ran command: `$env:PATH = "C:\msys64\ucrt64\bin;" + $env:PATH; g++ -std=c++11 -Wall -Wextra -c RigidBody2D.cpp -o RigidBody2D.o 2>&1`
+
+Clean compile, zero warnings. [`RigidBody2D.cpp`](file:///c:/REDACTED/Dev%20Jogos%20de%20Computador/Source/RigidBody2D.cpp) is ready.
+
+---
+
+## Implementation Notes
+
+### Why the order of the two lines is load-bearing
+
+| Method | Step 1 | Step 2 | Energy behaviour |
+|---|---|---|---|
+| **Explicit (forward) Euler** | `velocity += accel * dt` | `position += old_velocity * dt` | Pumps energy into the system → unstable spiral |
+| **Semi-implicit (symplectic) Euler** ✓ | `velocity += accel * dt` | `position += **new**_velocity * dt` | Conserves energy → stable orbits and springs |
+| Implicit (backward) Euler | requires solving a linear system | — | Dissipates energy → overdamped |
+
+Swapping the two lines here would silently revert to explicit Euler — the simulation would compile and run, but gradually explode under sustained forces (e.g., gravity + bounce).
+
+### Why `noexcept` is kept despite the `assert`
+
+`assert` aborts via `std::abort()`, which does not throw. `noexcept` is therefore correct: the contract violation terminates the process rather than unwinding the stack. In release builds (`-DNDEBUG`) the assert vanishes entirely, making `integrate` a trivial two-line hot path with no overhead.
+
+
+Meta prompt para testes …
+
+<persona>
+You are a Lead C++ Game Engine Programmer specializing in physics simulation, numerical integration, and unit testing.
+</persona>
+
+<context>
+The `RigidBody2D.cpp` implementation is complete. We now need to verify its kinematic correctness, specifically proving that the Semi-Implicit Euler integration order is working properly.
+Following the project requirements, we use standard C++ `<cassert>` for unit testing, compiling with C++11.
+</context>
+
+<constraints>
+- WE WORK ON ONE FILE AT A TIME. Generate ONLY the code for `test_RigidBody2D.cpp` containing the `main()` function.
+- ONLY use standard `<cassert>` for tests. Do not use external frameworks.
+- NO DEATH TESTS: Because standard `assert` aborts the program, do NOT write test cases that intentionally trigger the `@pre dt > 0` condition (e.g., do not test `dt = 0.0f` or `dt = -1.0f`).
+- FLOATING POINT COMPARISON: Implement a helper macro or function (`bool is_near(float a, float b, float epsilon = 1e-4f)`) to compare float values when checking position, velocity, and acceleration components.
+- Include standard output (`<iostream>`) to print an "All RigidBody2D tests passed!" message at the very end of `main()`.
+</constraints>
+
+<objective>
+Write a robust `test_RigidBody2D.cpp` file. Follow this exact roadmap:
+
+Step 1: Setup the file with correct includes (`<iostream>`, `<cassert>`, `"RigidBody2D.hpp"`, `"Vector2D.hpp"`, `<cmath>`) and the `is_near` helper.
+Step 2: Test Zero Acceleration (Constant Velocity). Initialize a body with a starting position and velocity, but zero acceleration. Call `integrate(dt)`. Assert that velocity remains unchanged and position updates correctly (`p = p + v * dt`).
+Step 3: Test Constant Acceleration (From Rest). This is the crucial test for Semi-Implicit Euler. Initialize a body at origin with zero velocity and a known acceleration. Call `integrate(dt)`. Assert that the new velocity is exactly `a * dt`. Assert that the new position is `v_new * dt` (proving that velocity was updated BEFORE position, which is the definition of symplectic Euler).
+Step 4: Test Multiple Steps. Simulate a falling object (gravity on the Y axis, growing downward as per Global.hpp) over several frames (e.g., 3 sequential calls to `integrate(dt)`). Mathematically calculate the expected final velocity and position, and assert they match the rigid body's state.
+Step 5: Output the success message.
+
+Output only the C++ code for `test_RigidBody2D.cpp`.
+</objective>
+
+Resposta 
+
+Created test_RigidBody2D.cpp
+Ran command: `$env:PATH = "C:\msys64\ucrt64\bin;" + env:PATH;g++-std=c++11-Wall-Wextra-otestRigidBody2D.exetestRigidBody2D.cppRigidBody2D.cppVector2D.cpp2>&1;if(LASTEXITCODE -eq 0) { .\test_RigidBody2D.exe }`
+
+All 3 tests pass cleanly with zero warnings. Here's the reasoning behind each test's design:
+
+---
+
+## Test Design Notes
+
+### Test 2 — The Integration Proof (Most Critical)
+
+This test is designed to **mathematically falsify explicit Euler** if it were accidentally implemented instead. With `pos=(0,0)`, `vel=(0,0)`, `accel=(2,3)`:
+
+| Method | `pos.x` after 1 step | Passes? |
+|---|---|---|
+| **Semi-implicit (symplectic) Euler** ✓ | `0 + (0 + 2×0.5) × 0.5` = **0.5** | ✅ |
+| Explicit (forward) Euler ✗ | `0 + 0 × 0.5` = **0.0** | ❌ |
+
+Starting from rest is the essential setup — it makes `vel_old = (0,0)`, so the two methods produce **different position results** from the very first frame. Any other initial velocity would mask the bug.
+
+### Test 3 — Frame-by-Frame Gravity Table
+
+The expected values are computed purely by hand to avoid circular reasoning (not derived from the code being tested):
+
+| Frame | `vel.y` | `pos.y` |
+|---|---|---|
+| 0 (start) | 0 | 0 |
+| 1 | 10 | 1 |
+| 2 | 20 | 3 |
+| 3 | 30 | 6 |
+
+The quadratic growth in `pos.y` (1 → 3 → 6, differences +2, +3) is the characteristic signature of semi-implicit Euler with constant acceleration — a quick sanity check that energy is accumulating correctly across frames.
+
+Sucesso
